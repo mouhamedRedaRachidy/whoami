@@ -3,8 +3,9 @@
 Expose :
 - ``/``          : interface web
 - ``/health``    : sonde de disponibilité
-- ``/check``     : audit JSON (DNS, IP, serveur, TLS, temps, sous-domaines)
-- ``/report.pdf``: même audit au format PDF
+- ``/check``     : audit JSON (DNS, IP, serveur, TLS, temps, sous-domaines,
+                   ports TCP courants des IP publiques du domaine)
+- ``/report.pdf``: dernier audit du domaine au format PDF (sans nouveau scan)
 """
 
 from __future__ import annotations
@@ -112,77 +113,55 @@ BROWSER_HEADERS = {
     "Accept-Language": "fr,en;q=0.8",
 }
 
-# Scan de ports
-MAX_SCAN_PORTS = 1024
-MAX_SCAN_HOSTS = 4
-MAX_PARALLEL_SCANS = 128
-DEFAULT_SCAN_TIMEOUT = 1.0
-ALLOW_PRIVATE_SCAN = os.getenv("ALLOW_PRIVATE_SCAN", "").lower() in {
-    "1",
-    "true",
-    "yes",
-    "on",
+# Analyse automatique des ports TCP (liste fixe, aucune saisie utilisateur)
+PORT_SCAN_TIMEOUT_SECONDS = 2.0
+PORT_SCAN_MAX_CONNECTIONS = 10
+PORT_SCAN_MAX_IPS = 4
+REPORT_TTL_SECONDS = 3600
+
+# Nom du service *habituellement* associé au port : purement indicatif.
+PORT_SERVICES: dict[int, str] = {
+    21: "FTP",
+    22: "SSH",
+    25: "SMTP",
+    53: "DNS (TCP)",
+    80: "HTTP",
+    110: "POP3",
+    143: "IMAP",
+    443: "HTTPS",
+    465: "SMTPS",
+    587: "SMTP (soumission)",
+    993: "IMAPS",
+    995: "POP3S",
+    3306: "MySQL",
+    5432: "PostgreSQL",
+    6379: "Redis",
+    8000: "HTTP alternatif",
+    8080: "HTTP alternatif",
+    8443: "HTTPS alternatif",
+}
+SCAN_PORTS: tuple[int, ...] = tuple(PORT_SERVICES)
+
+PORT_STATE_LABELS = {
+    "open": "ouvert",
+    "refused": "connexion refusée",
+    "timeout": "délai dépassé",
+    "error": "erreur réseau",
 }
 
-COMMON_PORTS = (
-    21,      # FTP
-    22,      # SSH
-    23,      # Telnet
-    25,      # SMTP
-    53,      # DNS
-    80,      # HTTP
-    110,     # POP3
-    111,     # RPC
-    135,     # MS RPC
-    139,     # NetBIOS
-    143,     # IMAP
-    389,     # LDAP
-    443,     # HTTPS
-    445,     # SMB
-    465,     # SMTPS
-    587,     # SMTP submission
-    631,     # IPP
-    993,     # IMAPS
-    995,     # POP3S
-    1080,    # SOCKS
-    1194,    # OpenVPN
-    1433,    # MSSQL
-    1521,    # Oracle
-    1723,    # PPTP
-    2049,    # NFS
-    2082,    # cPanel
-    2083,    # cPanel SSL
-    2181,    # ZooKeeper
-    2375,    # Docker
-    2376,    # Docker TLS
-    2379,    # etcd
-    3000,    # Node / Grafana
-    3306,    # MySQL
-    3389,    # RDP
-    4000,    # Dev
-    5000,    # Dev
-    5060,    # SIP
-    5061,    # SIP TLS
-    5432,    # PostgreSQL
-    5601,    # Kibana
-    5672,    # RabbitMQ
-    5900,    # VNC
-    6379,    # Redis
-    6443,    # Kubernetes API
-    7001,    # WebLogic
-    8000,    # HTTP alternatif
-    8008,    # HTTP alternatif
-    8080,    # HTTP alternatif
-    8081,    # HTTP alternatif
-    8443,    # HTTPS alternatif
-    8888,    # HTTP alternatif
-    9000,    # Portainer / PHP-FPM
-    9090,    # Prometheus
-    9200,    # Elasticsearch
-    9300,    # Elasticsearch
-    10250,   # Kubelet
-    11211,   # Memcached
-    27017,   # MongoDB
+PORT_SCAN_NOTES = (
+    "Test TCP uniquement : un port testé en TCP ne dit rien du même port en "
+    "UDP (par exemple, le port 53 en TCP ne vérifie pas le DNS en UDP).",
+    "Le nom du service est indicatif : il correspond à l'usage habituel du "
+    "port, pas au logiciel réellement en écoute.",
+    "Les adresses IP peuvent appartenir à un CDN ou à un proxy (Cloudflare, "
+    "load balancer...) et ne représentent pas forcément le serveur d'origine.",
+    "« Délai dépassé » signifie souvent qu'un pare-feu ignore la connexion ; "
+    "« connexion refusée » signifie que la machine répond mais que rien "
+    "n'écoute sur ce port.",
+    "N'analysez que des domaines que vous possédez ou que vous êtes autorisé "
+    "à tester. Aucune plage réseau n'est scannée : seules les IP du domaine "
+    "sont testées.",
 )
 
 _cache: dict[str, tuple[float, dict[str, Any]]] = {}
@@ -217,10 +196,20 @@ def _normalize_domain(domain: str) -> str:
 
 
 def _is_public_ip(value: str) -> bool:
+    """Vrai seulement pour une adresse routable sur Internet.
+
+    Refuse les adresses privées, locales, réservées, partagées (CGNAT) et
+    multicast, y compris sous forme IPv4 encapsulée dans IPv6 (::ffff:a.b.c.d).
+    """
     try:
-        return ipaddress.ip_address(value).is_global
+        ip = ipaddress.ip_address(value)
     except ValueError:
         return False
+
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+
+    return ip.is_global and not ip.is_multicast
 
 
 # ---------------------------------------------------------------------------
@@ -698,116 +687,36 @@ async def _collect_subdomains(
 
 
 # ---------------------------------------------------------------------------
-# Scan de ports
+# Ports TCP (scan automatique des IP du domaine)
 # ---------------------------------------------------------------------------
 
 
-async def _resolve_addresses(domain: str) -> list[str]:
-    resolver = _new_resolver()
-    fallback = _new_resolver(use_public=False)
-    ipv4, ipv6 = await asyncio.gather(
-        _resolve_type(resolver, domain, "A", fallback),
-        _resolve_type(resolver, domain, "AAAA", fallback),
-    )
-    addresses = list(dict.fromkeys(ipv4 + ipv6))
+def _select_scan_ips(ips: list[str]) -> tuple[list[str], list[str], list[str]]:
+    """Répartit les IP du domaine : testées, non testées (limite), refusées.
 
-    if not addresses:
-        addresses = await _system_addresses(domain)
+    Seules les IP publiques sont retenues. IPv4 et IPv6 sont alternées pour
+    que les deux familles soient représentées quand la limite est atteinte.
+    """
+    unique = list(dict.fromkeys(ips))
+    public = [ip for ip in unique if _is_public_ip(ip)]
+    rejected = [ip for ip in unique if not _is_public_ip(ip)]
 
-    return addresses
+    ipv4 = [ip for ip in public if ":" not in ip]
+    ipv6 = [ip for ip in public if ":" in ip]
+    ordered: list[str] = []
+    for index in range(max(len(ipv4), len(ipv6))):
+        ordered.extend(family[index] for family in (ipv4, ipv6) if index < len(family))
 
-
-def _parse_ports(spec: str | None) -> list[int]:
-    if not spec or not spec.strip():
-        return list(COMMON_PORTS)
-
-    ports: set[int] = set()
-    for chunk in spec.split(","):
-        chunk = chunk.strip()
-        if not chunk:
-            continue
-
-        try:
-            if "-" in chunk:
-                start_text, end_text = chunk.split("-", 1)
-                start, end = int(start_text), int(end_text)
-                if start < 1 or end > 65535 or start > end:
-                    raise ValueError
-                ports.update(range(start, end + 1))
-            else:
-                port = int(chunk)
-                if not 1 <= port <= 65535:
-                    raise ValueError
-                ports.add(port)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Plage de ports invalide : {chunk}",
-            ) from exc
-
-    if not ports:
-        raise HTTPException(status_code=422, detail="Aucun port valide demandé.")
-
-    if len(ports) > MAX_SCAN_PORTS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Maximum {MAX_SCAN_PORTS} ports par scan.",
-        )
-
-    return sorted(ports)
+    return ordered[:PORT_SCAN_MAX_IPS], ordered[PORT_SCAN_MAX_IPS:], rejected
 
 
-def _service_name(port: int) -> str | None:
+async def _close_writer(writer: asyncio.StreamWriter) -> None:
+    """Ferme proprement la connexion, sans jamais bloquer l'analyse."""
+    writer.close()
     try:
-        return socket.getservbyport(port, "tcp")
-    except OSError:
-        return None
-
-
-async def _resolve_scan_target(
-    target: str,
-) -> tuple[str, list[str], list[str], bool]:
-    value = target.strip().lower().rstrip(".")
-    if not value:
-        raise HTTPException(status_code=422, detail="Cible vide.")
-
-    try:
-        ip = ipaddress.ip_address(value)
-    except ValueError:
-        domain = _normalize_domain(value)
-        addresses = await _resolve_addresses(domain)
-        target_type = "domain"
-    else:
-        addresses = [str(ip)]
-        target_type = "ip"
-
-    if not addresses:
-        raise HTTPException(
-            status_code=400,
-            detail="La cible ne résout vers aucune adresse IP.",
-        )
-
-    scanned: list[str] = []
-    skipped: list[str] = []
-
-    for address in addresses:
-        if _is_public_ip(address) or ALLOW_PRIVATE_SCAN:
-            scanned.append(address)
-        else:
-            skipped.append(address)
-
-    if not scanned:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Adresse non publique : scan bloqué. "
-                "Définissez ALLOW_PRIVATE_SCAN=1 pour autoriser "
-                "les réseaux privés."
-            ),
-        )
-
-    truncated = len(scanned) > MAX_SCAN_HOSTS
-    return target_type, scanned[:MAX_SCAN_HOSTS], skipped, truncated
+        await asyncio.wait_for(writer.wait_closed(), timeout=1.0)
+    except (OSError, TimeoutError):
+        writer.transport.abort()
 
 
 async def _probe_port(
@@ -815,81 +724,111 @@ async def _probe_port(
     port: int,
     timeout: float,
     semaphore: asyncio.Semaphore,
-) -> dict[str, Any] | None:
-    try:
-        async with semaphore:
-            started = perf_counter()
+) -> dict[str, Any]:
+    """Tente une connexion TCP et classe le résultat (ouvert/refusé/délai)."""
+    result: dict[str, Any] = {
+        "port": port,
+        "service": PORT_SERVICES.get(port, "inconnu"),
+        "latency_ms": None,
+    }
+
+    async with semaphore:
+        started = perf_counter()
+        try:
             _reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(ip, port),
                 timeout=timeout,
             )
-    except (TimeoutError, OSError):
-        return None
+        except TimeoutError:
+            return {**result, "state": "timeout"}
+        except ConnectionRefusedError:
+            return {**result, "state": "refused"}
+        except OSError as exc:
+            return {
+                **result,
+                "state": "error",
+                "error": exc.strerror or type(exc).__name__,
+            }
 
-    latency_ms = (perf_counter() - started) * 1000
-    writer.close()
-    try:
-        await writer.wait_closed()
-    except OSError:
-        pass
+        latency_ms = (perf_counter() - started) * 1000
+        await _close_writer(writer)
 
-    return {
-        "port": port,
-        "service": _service_name(port),
-        "latency_ms": round(latency_ms, 2),
-    }
+    return {**result, "state": "open", "latency_ms": round(latency_ms, 2)}
 
 
 async def _scan_host(
     ip: str,
-    ports: list[int],
+    ports: tuple[int, ...] | list[int],
     timeout: float,
-    semaphore: asyncio.Semaphore | None = None,
+    semaphore: asyncio.Semaphore,
 ) -> dict[str, Any]:
     started = perf_counter()
-    limiter = semaphore or asyncio.Semaphore(MAX_PARALLEL_SCANS)
     results = await asyncio.gather(
-        *(_probe_port(ip, port, timeout, limiter) for port in ports)
+        *(_probe_port(ip, port, timeout, semaphore) for port in ports)
     )
-    open_ports = sorted(
-        (result for result in results if result is not None),
-        key=lambda item: item["port"],
-    )
+    results = sorted(results, key=lambda item: item["port"])
 
+    def ports_in(state: str) -> list[int]:
+        return [item["port"] for item in results if item["state"] == state]
+
+    open_ports = [item for item in results if item["state"] == "open"]
     return {
         "ip": ip,
+        "version": ipaddress.ip_address(ip).version,
         "open_ports": open_ports,
         "open_count": len(open_ports),
+        "refused_ports": ports_in("refused"),
+        "timeout_ports": ports_in("timeout"),
+        "error_ports": [
+            {"port": item["port"], "error": item.get("error")}
+            for item in results
+            if item["state"] == "error"
+        ],
         "duration_ms": round((perf_counter() - started) * 1000, 2),
     }
 
 
-async def scan_target(
-    target: str,
-    ports_spec: str | None,
-    timeout: float,
-) -> dict[str, Any]:
+async def scan_ports(ips: list[str]) -> dict[str, Any]:
+    """Teste la liste fixe de ports TCP sur les IP publiques du domaine."""
     started = perf_counter()
-    ports = _parse_ports(ports_spec)
-    target_type, addresses, skipped, truncated = await _resolve_scan_target(target)
-    semaphore = asyncio.Semaphore(MAX_PARALLEL_SCANS)
+    selected, not_scanned, rejected = _select_scan_ips(ips)
 
+    summary: dict[str, Any] = {
+        "protocol": "TCP",
+        "ports": list(SCAN_PORTS),
+        "timeout_seconds": PORT_SCAN_TIMEOUT_SECONDS,
+        "max_connections": PORT_SCAN_MAX_CONNECTIONS,
+        "max_ips": PORT_SCAN_MAX_IPS,
+        "scanned_ips": selected,
+        "not_scanned_ips": not_scanned,
+        "rejected_ips": rejected,
+        "hosts": [],
+        "skipped": False,
+        "error": None,
+        "notes": list(PORT_SCAN_NOTES),
+        "duration_ms": 0.0,
+    }
+
+    if not selected:
+        summary["skipped"] = True
+        summary["error"] = (
+            "Aucune adresse IP publique : scan des ports non effectué par sécurité."
+            if ips
+            else "Aucune adresse IP trouvée : scan des ports non effectué."
+        )
+        return summary
+
+    semaphore = asyncio.Semaphore(PORT_SCAN_MAX_CONNECTIONS)
     hosts = await asyncio.gather(
-        *(_scan_host(ip, ports, timeout, semaphore) for ip in addresses)
+        *(
+            _scan_host(ip, SCAN_PORTS, PORT_SCAN_TIMEOUT_SECONDS, semaphore)
+            for ip in selected
+        )
     )
 
-    return {
-        "target": target.strip().lower().rstrip("."),
-        "target_type": target_type,
-        "ips": addresses,
-        "skipped_ips": skipped,
-        "hosts_truncated": truncated,
-        "ports_scanned": len(ports),
-        "timeout_seconds": timeout,
-        "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "duration_ms": round((perf_counter() - started) * 1000, 2),
-        "hosts": list(hosts),
-    }
+    summary["hosts"] = list(hosts)
+    summary["duration_ms"] = round((perf_counter() - started) * 1000, 2)
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -912,9 +851,10 @@ async def audit_domain(domain: str) -> dict[str, Any]:
     )
     http_task = asyncio.create_task(_http_check(domain, ips))
     reverse_task = asyncio.create_task(_reverse_dns_many(ips[:2]))
+    ports_task = asyncio.create_task(scan_ports(ips))
 
-    tls, http, reverse, crt_names, probed_names = await asyncio.gather(
-        tls_task, http_task, reverse_task, crt_task, probe_task
+    tls, http, reverse, crt_names, probed_names, ports = await asyncio.gather(
+        tls_task, http_task, reverse_task, crt_task, probe_task, ports_task
     )
 
     subdomains, subdomains_total, subdomains_source = await _collect_subdomains(
@@ -947,23 +887,26 @@ async def audit_domain(domain: str) -> dict[str, Any]:
         "subdomains": subdomains,
         "subdomains_total": subdomains_total,
         "subdomains_source": subdomains_source,
+        "ports": ports,
     }
 
 
-def _cache_get(key: str) -> dict[str, Any] | None:
+def _cache_get(
+    key: str, max_age: float = CACHE_TTL_SECONDS
+) -> dict[str, Any] | None:
     cached = _cache.get(key)
-    if cached and cached[0] > monotonic():
+    if cached and monotonic() - cached[0] < max_age:
         return cached[1]
     return None
 
 
 def _cache_set(key: str, value: dict[str, Any]) -> None:
-    _cache[key] = (monotonic() + CACHE_TTL_SECONDS, value)
+    _cache[key] = (monotonic(), value)
 
     if len(_cache) > 128:
         now = monotonic()
-        for existing, (expires, _) in list(_cache.items()):
-            if expires <= now:
+        for existing, (created, _) in list(_cache.items()):
+            if now - created >= REPORT_TTL_SECONDS:
                 _cache.pop(existing, None)
 
 
@@ -980,21 +923,18 @@ async def get_audit(domain: str, refresh: bool = False) -> dict[str, Any]:
     return report
 
 
-async def get_scan(
-    target: str,
-    ports_spec: str | None,
-    timeout: float,
-    refresh: bool = False,
-) -> dict[str, Any]:
-    key = f"scan|{target.strip().lower()}|{ports_spec or ''}|{timeout}"
-
-    if not refresh:
-        cached = _cache_get(key)
-        if cached is not None:
-            return cached
-
-    report = await scan_target(target, ports_spec, timeout)
-    _cache_set(key, report)
+def get_saved_report(domain: str) -> dict[str, Any]:
+    """Rapport déjà calculé pour le PDF : ne relance jamais l'analyse."""
+    domain = _normalize_domain(domain)
+    report = _cache_get(domain, max_age=REPORT_TTL_SECONDS)
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Aucune analyse récente pour ce domaine. Cliquez sur "
+                "« Analyser » avant de télécharger le PDF."
+            ),
+        )
     return report
 
 
@@ -1026,7 +966,7 @@ class _ReportPDF(FPDF):
 
 
 def _pdf_cover(pdf: FPDF, subtitle: str) -> None:
-    pdf.set_fill_color(37, 99, 235)
+    pdf.set_fill_color(124, 58, 237)
     pdf.rect(0, 0, pdf.w, 36, style="F")
     pdf.set_xy(15, 11)
     pdf.set_font("Helvetica", "B", 22)
@@ -1049,7 +989,7 @@ def _pdf_section(pdf: FPDF, title: str) -> None:
     pdf.cell(0, 7, _pdf_safe(title), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     y = pdf.get_y()
-    pdf.set_draw_color(37, 99, 235)
+    pdf.set_draw_color(124, 58, 237)
     pdf.set_line_width(0.5)
     pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
     pdf.set_line_width(0.2)
@@ -1065,6 +1005,85 @@ def _pdf_row(pdf: FPDF, label: str, value: Any, label_width: float = 48) -> None
     pdf.set_text_color(15, 23, 42)
     text = _pdf_safe(value) or "-"
     pdf.multi_cell(0, 5.6, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+
+def _format_port_list(ports: list[int]) -> str:
+    return ", ".join(str(port) for port in ports) or "aucun"
+
+
+def _pdf_ports(pdf: FPDF, ports: dict[str, Any]) -> None:
+    _pdf_section(pdf, "Ports TCP")
+    if not ports:
+        _pdf_row(pdf, "Statut", "Scan des ports non disponible pour ce rapport.")
+        return
+
+    _pdf_row(
+        pdf,
+        "Méthode",
+        f"Connexion {ports.get('protocol') or 'TCP'} - délai "
+        f"{ports.get('timeout_seconds') or 0:.0f} s - "
+        f"{ports.get('max_connections') or 0} connexions simultanées max",
+    )
+    _pdf_row(pdf, "Ports testés", _format_port_list(ports.get("ports") or []))
+    _pdf_row(
+        pdf, "IP testées", ", ".join(ports.get("scanned_ips") or []) or "aucune"
+    )
+    if ports.get("not_scanned_ips"):
+        _pdf_row(
+            pdf,
+            "IP non testées",
+            f"{', '.join(ports['not_scanned_ips'])} "
+            f"(limite de {ports.get('max_ips') or PORT_SCAN_MAX_IPS} IP par analyse)",
+        )
+    if ports.get("rejected_ips"):
+        _pdf_row(
+            pdf,
+            "IP refusées",
+            f"{', '.join(ports['rejected_ips'])} (adresses non publiques)",
+        )
+    if ports.get("error"):
+        _pdf_row(pdf, "Statut", ports["error"])
+
+    for host in ports.get("hosts") or []:
+        _pdf_section(pdf, f"Ports TCP - IPv{host.get('version') or '?'} {host.get('ip')}")
+        open_ports = host.get("open_ports") or []
+        if open_ports:
+            for item in open_ports:
+                _pdf_row(
+                    pdf,
+                    f"Port {item.get('port')} ouvert",
+                    f"{item.get('service') or 'inconnu'} (indicatif) - "
+                    f"connexion en {_format_ms(item.get('latency_ms'))}",
+                )
+        else:
+            _pdf_row(pdf, "Ports ouverts", "Aucun port ouvert détecté.")
+
+        _pdf_row(
+            pdf,
+            PORT_STATE_LABELS["refused"].capitalize(),
+            _format_port_list(host.get("refused_ports") or []),
+        )
+        _pdf_row(
+            pdf,
+            PORT_STATE_LABELS["timeout"].capitalize(),
+            _format_port_list(host.get("timeout_ports") or []),
+        )
+        for item in host.get("error_ports") or []:
+            _pdf_row(
+                pdf,
+                f"Port {item.get('port')}",
+                f"{PORT_STATE_LABELS['error']} : {item.get('error') or '-'}",
+            )
+
+    notes = ports.get("notes") or []
+    if notes:
+        pdf.ln(2)
+        pdf.set_font("Helvetica", "I", 8)
+        pdf.set_text_color(100, 116, 139)
+        for note in notes:
+            pdf.multi_cell(
+                0, 4.5, _pdf_safe(f"- {note}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT
+            )
 
 
 def build_pdf_report(report: dict[str, Any]) -> bytes:
@@ -1107,6 +1126,8 @@ def build_pdf_report(report: dict[str, Any]) -> bytes:
         _pdf_row(pdf, "Note HTTP", http["note"])
     if http.get("error"):
         _pdf_row(pdf, "Erreur HTTP", http["error"])
+
+    _pdf_ports(pdf, report.get("ports") or {})
 
     _pdf_section(pdf, "Certificat TLS")
     tls = report.get("tls") or {}
@@ -1176,75 +1197,6 @@ def build_pdf_report(report: dict[str, Any]) -> bytes:
     return bytes(pdf.output())
 
 
-def build_scan_pdf_report(report: dict[str, Any]) -> bytes:
-    pdf = _ReportPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=18)
-    pdf.set_margins(15, 15, 15)
-    pdf.add_page()
-    _pdf_cover(pdf, "Rapport de scan de ports")
-
-    _pdf_row(pdf, "Cible", report.get("target"))
-    _pdf_row(pdf, "Type", report.get("target_type") or "-")
-    _pdf_row(pdf, "Analysé le", report.get("checked_at"))
-    _pdf_row(pdf, "Adresses", ", ".join(report.get("ips") or []) or "aucune")
-    _pdf_row(pdf, "Ports scannés", report.get("ports_scanned") or 0)
-    _pdf_row(
-        pdf,
-        "Délai par port",
-        f"{report.get('timeout_seconds') or 0:.1f} s",
-    )
-    _pdf_row(pdf, "Durée totale", _format_ms(report.get("duration_ms")))
-
-    if report.get("hosts_truncated"):
-        _pdf_row(
-            pdf,
-            "Note",
-            f"Seuls les {MAX_SCAN_HOSTS} premiers hôtes ont été scannés.",
-        )
-    if report.get("skipped_ips"):
-        _pdf_row(
-            pdf,
-            "Adresses ignorées",
-            ", ".join(report["skipped_ips"]),
-        )
-
-    hosts = report.get("hosts") or []
-    if not hosts:
-        _pdf_row(pdf, "Hôtes", "Aucun hôte à scanner.")
-
-    for host in hosts:
-        _pdf_section(pdf, f"Hôte {host.get('ip') or 'inconnu'}")
-        _pdf_row(pdf, "Ports ouverts", host.get("open_count") or 0)
-
-        open_ports = host.get("open_ports") or []
-        if open_ports:
-            for item in open_ports:
-                service = item.get("service") or "inconnu"
-                _pdf_row(
-                    pdf,
-                    f"Port {item.get('port')}",
-                    f"{service} - {_format_ms(item.get('latency_ms'))}",
-                )
-        else:
-            _pdf_row(pdf, "Détail", "Aucun port ouvert détecté.")
-
-        _pdf_row(pdf, "Durée du scan", _format_ms(host.get("duration_ms")))
-
-    pdf.ln(6)
-    pdf.set_font("Helvetica", "I", 8)
-    pdf.set_text_color(120, 128, 140)
-    pdf.multi_cell(
-        0,
-        4.5,
-        _pdf_safe(
-            "Scan TCP réalisé par Domain Pulse. Seuls les ports demandés ont "
-            "été testés ; un port filtré peut apparaître comme fermé."
-        ),
-    )
-
-    return bytes(pdf.output())
-
-
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -1272,11 +1224,9 @@ async def check(
 
 
 @app.get("/report.pdf")
-async def report_pdf(
-    domain: str = DOMAIN_QUERY,
-    refresh: bool = Query(False, description="Ignorer le cache de 5 minutes"),
-):
-    report = await get_audit(domain, refresh=refresh)
+async def report_pdf(domain: str = DOMAIN_QUERY):
+    # Le PDF reprend l'analyse déjà affichée : aucun nouveau scan ici.
+    report = get_saved_report(domain)
     content = build_pdf_report(report)
 
     return Response(
@@ -1284,71 +1234,7 @@ async def report_pdf(
         media_type="application/pdf",
         headers={
             "Content-Disposition": (
-                f'attachment; filename="domain-pulse-{domain}.pdf"'
-            )
-        },
-    )
-
-
-@app.get("/scan")
-async def scan(
-    target: str = Query(
-        ...,
-        min_length=1,
-        max_length=253,
-        description="Adresse IP ou nom de domaine à scanner",
-    ),
-    ports: str | None = Query(
-        None,
-        description=(
-            "Ports à tester, ex. 22,80,443 ou 1-1024 "
-            f"(maximum {MAX_SCAN_PORTS} ports)"
-        ),
-    ),
-    timeout: float = Query(
-        DEFAULT_SCAN_TIMEOUT,
-        ge=0.2,
-        le=2.0,
-        description="Délai de connexion par port en secondes",
-    ),
-    refresh: bool = Query(False, description="Ignorer le cache de 5 minutes"),
-):
-    return await get_scan(target, ports, timeout, refresh=refresh)
-
-
-@app.get("/scan/report.pdf")
-async def scan_report_pdf(
-    target: str = Query(
-        ...,
-        min_length=1,
-        max_length=253,
-        description="Adresse IP ou nom de domaine à scanner",
-    ),
-    ports: str | None = Query(
-        None,
-        description=(
-            "Ports à tester, ex. 22,80,443 ou 1-1024 "
-            f"(maximum {MAX_SCAN_PORTS} ports)"
-        ),
-    ),
-    timeout: float = Query(
-        DEFAULT_SCAN_TIMEOUT,
-        ge=0.2,
-        le=2.0,
-        description="Délai de connexion par port en secondes",
-    ),
-    refresh: bool = Query(False, description="Ignorer le cache de 5 minutes"),
-):
-    report = await get_scan(target, ports, timeout, refresh=refresh)
-    content = build_scan_pdf_report(report)
-    filename = report["target"].replace(":", "-")
-
-    return Response(
-        content=content,
-        media_type="application/pdf",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="domain-pulse-scan-{filename}.pdf"'
+                f'attachment; filename="domain-pulse-{report["domain"]}.pdf"'
             )
         },
     )
