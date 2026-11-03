@@ -816,10 +816,9 @@ async def _probe_port(
     timeout: float,
     semaphore: asyncio.Semaphore,
 ) -> dict[str, Any] | None:
-    started = perf_counter()
-
     try:
         async with semaphore:
+            started = perf_counter()
             _reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(ip, port),
                 timeout=timeout,
@@ -873,9 +872,10 @@ async def scan_target(
     started = perf_counter()
     ports = _parse_ports(ports_spec)
     target_type, addresses, skipped, truncated = await _resolve_scan_target(target)
+    semaphore = asyncio.Semaphore(MAX_PARALLEL_SCANS)
 
     hosts = await asyncio.gather(
-        *(_scan_host(ip, ports, timeout) for ip in addresses)
+        *(_scan_host(ip, ports, timeout, semaphore) for ip in addresses)
     )
 
     return {

@@ -102,7 +102,16 @@ sur `/health`.
   d'indisponibilité, l'outil se rabat sur le certificat TLS et des préfixes
   courants.
 - Les domaines privés (`localhost`, `.local`, `.internal`) et les adresses IP
-  littérales sont refusés ; une requête HTTP est bloquée si le domaine ne
-  résout que vers des adresses non publiques.
+  littérales sont refusés par l'audit de domaine ; une requête HTTP est bloquée
+  si le domaine ne résout que vers des adresses non publiques. Le scan accepte
+  une IP littérale, mais bloque les adresses privées sauf avec
+  `ALLOW_PRIVATE_SCAN=1`.
+- Le scan de ports est **TCP uniquement**. Un port filtré par un pare-feu peut
+  apparaître comme fermé, et certains services ne répondent pas au simple
+  établissement de connexion.
+- N'utilisez le scan que sur des cibles que vous êtes autorisé à tester.
+- La vérification de disponibilité accepte toute réponse HTTP, même `403` ou
+  `404` : `reachable` indique que le serveur répond, `status_ok` indique un code
+  `200-399`.
 - Le résultat est mis en cache 5 minutes pour éviter de solliciter les sources
   externes à chaque appel.

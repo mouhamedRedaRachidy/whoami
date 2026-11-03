@@ -327,7 +327,7 @@ def test_parse_ports_rejects_too_many():
 
 
 def test_scan_host_collects_open_ports(monkeypatch):
-    async def fake_probe(ip, port, timeout):
+    async def fake_probe(ip, port, timeout, semaphore=None):
         if port in (22, 80):
             return {
                 "port": port,
@@ -402,3 +402,33 @@ def test_scan_pdf_handles_empty_report():
     content = main.build_scan_pdf_report({"target": "1.2.3.4"})
 
     assert content.startswith(b"%PDF")
+
+
+def test_resolve_dns_uses_system_fallback(monkeypatch):
+    async def fake_resolve_type(resolver, name, rdtype, fallback=None):
+        return []
+
+    async def fake_system_addresses(domain):
+        return [
+            "93.184.216.34",
+            "2606:2800:220:1:248:1893:25c8:1946",
+        ]
+
+    monkeypatch.setattr(main, "_resolve_type", fake_resolve_type)
+    monkeypatch.setattr(main, "_system_addresses", fake_system_addresses)
+
+    records, _ = asyncio.run(main._resolve_dns("example.com"))
+
+    assert records["A"] == ["93.184.216.34"]
+    assert records["AAAA"] == ["2606:2800:220:1:248:1893:25c8:1946"]
+
+
+def test_resolve_scan_target_accepts_public_ip():
+    target_type, addresses, skipped, truncated = asyncio.run(
+        main._resolve_scan_target("1.1.1.1")
+    )
+
+    assert target_type == "ip"
+    assert addresses == ["1.1.1.1"]
+    assert skipped == []
+    assert truncated is False

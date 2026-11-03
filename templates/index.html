@@ -419,7 +419,22 @@
     }
 
     function formatMs(value) {
-      return typeof value === "number" ? `${value.toFixed(2)} ms` : "n/d";
+      if (typeof value !== "number" || !Number.isFinite(value)) return "n/d";
+      return value >= 1000
+        ? `${(value / 1000).toFixed(2)} s`
+        : `${value.toFixed(2)} ms`;
+    }
+
+    function errorDetail(payload) {
+      if (!payload) return null;
+      if (typeof payload.detail === "string") return payload.detail;
+      if (Array.isArray(payload.detail)) {
+        return payload.detail
+          .map((item) => (item && item.msg) || "")
+          .filter(Boolean)
+          .join(", ") || null;
+      }
+      return null;
     }
 
     function stat(label, value, tone) {
@@ -584,7 +599,7 @@
         const response = await fetch(`/check?domain=${encodeURIComponent(domain)}`);
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
-          const detail = payload && typeof payload.detail === "string" ? payload.detail : null;
+          const detail = errorDetail(payload);
           throw new Error(detail || (response.status === 422 ? "Domaine invalide. Exemple : example.com" : "Erreur du serveur."));
         }
 
@@ -686,7 +701,7 @@
         const response = await fetch(`/scan?${params.toString()}`);
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
-          const detail = payload && typeof payload.detail === "string" ? payload.detail : null;
+          const detail = errorDetail(payload);
           throw new Error(detail || "Scan impossible.");
         }
 
