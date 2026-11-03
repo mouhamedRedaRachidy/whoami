@@ -3,11 +3,14 @@ name = "python-app-devops"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
+    "dnspython>=2.9.0",
     "fastapi[standard]>=0.162.0",
+    "fpdf2>=2.9.0",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
 ]
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "pytest>=9.2.0",
 ]

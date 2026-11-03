@@ -1,8 +1,10 @@
 name: CI
 
 on:
-  push: [main]
-  pull_request: [main]
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -12,12 +14,12 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: read 
+      contents: read
 
     steps:
       - name: Télécharger le code
         uses: actions/checkout@v4
-      
+
       - name: Installer uv
         uses: astral-sh/setup-uv@v6
         with:
@@ -34,7 +36,7 @@ jobs:
         run: uv run --no-sync python -m pytest -v
 
   build-and-push:
-    name: Build et push 
+    name: Build et push
     needs: tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -57,12 +59,12 @@ jobs:
 
       - name: Construire et publier l’image
         uses: docker/build-push-action@v7
+        env:
+          DOCKER_REPOSITORY: whom
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ secrets.DOCKERHUB_USER }}/api:${{ github.sha }}
+          tags: ${{ secrets.DOCKERHUB_USER }}/${{ env.DOCKER_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-

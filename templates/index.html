@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Domain Pulse</title>
+
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --brand: #2563eb;
+      --ok: #15803d;
+      --warn: #b45309;
+      --bad: #b91c1c;
+      --line: #e2e8f0;
+      --card: #ffffff;
+    }
+
+    * { box-sizing: border-box; }
+
+    [hidden] { display: none !important; }
+
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #eef2f7;
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
+    .page {
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
+      color: #ffffff;
+      border-radius: 24px;
+      padding: 34px;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+    }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 12px;
+      font-weight: 700;
+      color: #bfdbfe;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 6vw, 46px);
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      margin: 10px 0 22px;
+      max-width: 640px;
+      color: #dbeafe;
+      font-size: 16px;
+    }
+
+    .search {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    [hidden] { display: none !important; }
+
+    input, button, .button {
+      font: inherit;
+      border-radius: 12px;
+    }
+
+    input {
+      flex: 1 1 260px;
+      padding: 14px 16px;
+      border: 1px solid transparent;
+      background: #ffffff;
+      color: var(--ink);
+      font-size: 16px;
+      outline: none;
+    }
+
+    input:focus {
+      box-shadow: 0 0 0 4px rgba(191, 219, 254, 0.55);
+    }
+
+    button, .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 22px;
+      border: 0;
+      background: #ffffff;
+      color: #1e3a8a;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    button:hover, .button:hover { transform: translateY(-1px); }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: progress;
+      transform: none;
+    }
+
+    .button.secondary {
+      margin-top: 16px;
+      background: rgba(255, 255, 255, 0.14);
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.32);
+    }
+
+    .hint {
+      margin: 12px 0 0;
+      font-size: 13px;
+      color: #bfdbfe;
+    }
+
+    .scanner { margin-top: 20px; }
+
+    .scan-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 10px;
+    }
+
+    .scan-form input, .scan-form button {
+      border: 1px solid var(--line);
+    }
+
+    .scan-form button {
+      background: var(--brand);
+      color: #ffffff;
+    }
+
+    .scan-status {
+      margin: 12px 0 0;
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .scan-status.bad { color: var(--bad); }
+
+    .scan-pdf {
+      margin-top: 14px;
+      background: var(--brand);
+      color: #ffffff;
+    }
+
+    .error-text {
+      margin: 8px 0 0;
+      color: var(--bad);
+      font-size: 13px;
+    }
+
+    .status {
+      margin: 14px 0 0;
+      min-height: 22px;
+      font-size: 14px;
+      color: #dbeafe;
+      font-weight: 600;
+    }
+
+    .status.bad { color: #fecaca; }
+
+    #report { margin-top: 26px; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .stat-label {
+      display: block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .stat-value {
+      display: block;
+      margin-top: 6px;
+      font-size: 22px;
+      overflow-wrap: anywhere;
+    }
+
+    .stat-value.ok { color: var(--ok); }
+    .stat-value.bad { color: var(--bad); }
+    .stat-value.warn { color: var(--warn); }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 22px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+    }
+
+    .card-head { margin-bottom: 12px; }
+
+    .card h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.01em;
+    }
+
+    .muted, .card-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: minmax(130px, 190px) 1fr;
+      gap: 12px;
+      padding: 9px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .row:last-child { border-bottom: 0; }
+
+    .row-label {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .row-value {
+      font-size: 14px;
+      overflow-wrap: anywhere;
+      white-space: pre-line;
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+    }
+
+    th {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      background: #f8fafc;
+    }
+
+    .dns-type {
+      width: 110px;
+      font-weight: 700;
+      color: #1d4ed8;
+    }
+
+    .dns-value {
+      white-space: pre-line;
+      overflow-wrap: anywhere;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12.5px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+      font-size: 12.5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .alert {
+      border-color: #fecaca;
+      background: #fff1f2;
+      color: #7f1d1d;
+    }
+
+    .alert h2 { color: #991b1b; }
+
+    @media (max-width: 720px) {
+      .scan-form { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 560px) {
+      .hero { padding: 24px; }
+      .row { grid-template-columns: 1fr; gap: 2px; }
+      .dns-type { width: 70px; }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Audit réseau &amp; DNS</p>
+      <h1>Domain Pulse</h1>
+      <p class="lead">
+        Enregistrements DNS, adresses IP, serveur, certificat TLS, temps de réponse
+        et sous-domaines en un seul scan.
+      </p>
+
+      <form id="check-form" class="search">
+        <input
+          type="text"
+          id="domain"
+          placeholder="example.com"
+          aria-label="Domaine"
+          autocomplete="off"
+          spellcheck="false"
+          required
+        >
+        <button type="submit">Analyser</button>
+      </form>
+
+      <p class="hint">Sans https://. Exemple : example.com</p>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+      <a id="pdf-link" class="button secondary" hidden>Télécharger le rapport PDF</a>
+    </header>
+
+    <section class="card scanner">
+      <div class="card-head">
+        <h2>Scanner de ports</h2>
+        <p>Scan TCP d'une adresse IP ou d'un domaine (maximum 1024 ports). Les adresses privées nécessitent <code>ALLOW_PRIVATE_SCAN=1</code>.</p>
+      </div>
+
+      <form id="scan-form" class="scan-form">
+        <input
+          type="text"
+          id="scan-target"
+          placeholder="1.2.3.4 ou example.com"
+          aria-label="Cible du scan"
+          autocomplete="off"
+          spellcheck="false"
+          required
+        >
+        <input
+          type="text"
+          id="scan-ports"
+          placeholder="Ports : vide = courants, ex. 22,80,443 ou 1-1024"
+          aria-label="Ports à scanner"
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <button type="submit">Scanner</button>
+      </form>
+
+      <p id="scan-status" class="status scan-status" role="status" aria-live="polite"></p>
+      <div id="scan-results"></div>
+      <a id="scan-pdf-link" class="button scan-pdf" hidden>Télécharger le rapport PDF</a>
+    </section>
+
+    <section id="report" hidden></section>
+  </main>
+
+  <script>
+    const form = document.querySelector("#check-form");
+    const input = document.querySelector("#domain");
+    const statusEl = document.querySelector("#status");
+    const reportEl = document.querySelector("#report");
+    const pdfLink = document.querySelector("#pdf-link");
+    const button = form.querySelector("button");
+
+    const scanForm = document.querySelector("#scan-form");
+    const scanTarget = document.querySelector("#scan-target");
+    const scanPorts = document.querySelector("#scan-ports");
+    const scanStatus = document.querySelector("#scan-status");
+    const scanResults = document.querySelector("#scan-results");
+    const scanPdfLink = document.querySelector("#scan-pdf-link");
+    const scanButton = scanForm.querySelector("button");
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined && text !== null) node.textContent = String(text);
+      return node;
+    }
+
+    function formatMs(value) {
+      return typeof value === "number" ? `${value.toFixed(2)} ms` : "n/d";
+    }
+
+    function stat(label, value, tone) {
+      const box = el("div", "stat");
+      box.append(el("span", "stat-label", label));
+      box.append(el("strong", "stat-value" + (tone ? ` ${tone}` : ""), value));
+      return box;
+    }
+
+    function valueRow(label, value) {
+      const row = el("div", "row");
+      row.append(el("span", "row-label", label));
+      row.append(el("span", "row-value", value === undefined || value === null || value === "" ? "-" : value));
+      return row;
+    }
+
+    function card(title, subtitle) {
+      const section = el("section", "card");
+      const head = el("div", "card-head");
+      head.append(el("h2", null, title));
+      if (subtitle) head.append(el("p", null, subtitle));
+      section.append(head);
+      return section;
+    }
+
+    function renderReport(data) {
+      reportEl.replaceChildren();
+      reportEl.hidden = false;
+
+      const stats = el("div", "stats");
+      const online = data.reachable ?? data.available;
+      stats.append(
+        stat(
+          "Disponibilité",
+          online
+            ? (data.available ? "En ligne" : "En ligne (erreur serveur)")
+            : "Hors ligne",
+          online ? (data.available ? "ok" : "warn") : "bad"
+        ),
+        stat("Code HTTP", data.status_code ?? "n/d"),
+        stat("Temps de réponse", formatMs(data.response_time_ms)),
+        stat("Sous-domaines", data.subdomains_total ?? 0)
+      );
+      reportEl.append(stats);
+
+      if (data.http && data.http.error) {
+        const alert = card("Requête HTTP", "Le domaine n'a pas répondu correctement");
+        alert.classList.add("alert");
+        alert.append(el("p", null, data.http.error));
+        reportEl.append(alert);
+      }
+
+      const network = card("Réseau & serveur", "Résolution DNS et identité du serveur");
+      network.append(
+        valueRow("Adresses IP", (data.ips || []).join(", ") || "aucune"),
+        valueRow("DNS inverse", (data.server?.reverse_dns || []).join(", ") || "non trouvé"),
+        valueRow("En-tête serveur", data.server?.http_header || "non exposé"),
+        valueRow("URL finale", data.http?.url || "-")
+      );
+      if (data.http?.note) {
+        network.append(el("p", "muted", data.http.note));
+      }
+      reportEl.append(network);
+
+      const timings = card("Temps de réponse", "Mesures effectuées pendant l'analyse");
+      timings.append(
+        valueRow("Résolution DNS", formatMs(data.timings?.dns_ms)),
+        valueRow("Requête HTTP", formatMs(data.timings?.http_ms)),
+        valueRow("Total", formatMs(data.timings?.total_ms))
+      );
+      reportEl.append(timings);
+
+      const tls = card("Certificat TLS", "Validité et émetteur");
+      if (data.tls?.error && !data.tls?.subject) {
+        tls.append(el("p", "error-text", data.tls.error));
+      } else {
+        const days = data.tls?.days_left;
+        const daysText = typeof days === "number"
+          ? `${days} jour(s)${days < 30 ? " - renouvellement à prévoir" : ""}`
+          : "n/d";
+        const verified = data.tls?.verified;
+
+        tls.append(
+          valueRow("Sujet (CN)", data.tls?.subject),
+          valueRow("Émetteur", data.tls?.issuer),
+          valueRow("Expire le", data.tls?.expires_at),
+          valueRow("Jours restants", daysText),
+          valueRow("Protocole", [data.tls?.protocol, data.tls?.cipher].filter(Boolean).join(" / ")),
+          valueRow("Noms (SAN)", (data.tls?.san || []).length),
+          valueRow("Vérifié", verified === true ? "Oui" : verified === false ? "Non" : "n/d")
+        );
+
+        if (data.tls?.error) {
+          tls.append(el("p", "error-text", data.tls.error));
+        }
+      }
+      reportEl.append(tls);
+
+      const dns = card("Enregistrements DNS", "Tous les enregistrements publics détectés");
+      const entries = Object.entries(data.dns || {});
+      if (!entries.length) {
+        dns.append(el("p", "muted", "Aucun enregistrement DNS public trouvé."));
+      } else {
+        const wrap = el("div", "table-wrap");
+        const table = el("table");
+        const thead = el("thead");
+        const headRow = el("tr");
+        headRow.append(el("th", null, "Type"), el("th", null, "Valeur"));
+        thead.append(headRow);
+        table.append(thead);
+
+        const tbody = el("tbody");
+        for (const [type, values] of entries) {
+          const row = el("tr");
+          row.append(el("td", "dns-type", type));
+          row.append(el("td", "dns-value", (values || []).join("\n")));
+          tbody.append(row);
+        }
+        table.append(tbody);
+        wrap.append(table);
+        dns.append(wrap);
+      }
+      reportEl.append(dns);
+
+      const subs = card(
+        "Sous-domaines",
+        `Source : ${data.subdomains_source || "inconnue"}`
+      );
+      const chips = el("div", "chips");
+      for (const name of data.subdomains || []) {
+        chips.append(el("span", "chip", name));
+      }
+      if (!chips.children.length) {
+        chips.append(el("p", "muted", "Aucun sous-domaine détecté."));
+      }
+      subs.append(chips);
+
+      const shown = (data.subdomains || []).length;
+      const total = data.subdomains_total || shown;
+      if (total > shown) {
+        subs.append(el("p", "muted", `${total} sous-domaines au total, ${shown} affichés.`));
+      }
+      reportEl.append(subs);
+
+      pdfLink.href = `/report.pdf?domain=${encodeURIComponent(data.domain)}`;
+      pdfLink.hidden = false;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const domain = input.value.trim();
+      if (!domain) return;
+
+      button.disabled = true;
+      reportEl.hidden = true;
+      pdfLink.hidden = true;
+      statusEl.className = "status";
+      statusEl.textContent = "Analyse en cours... la découverte des sous-domaines peut prendre quelques secondes.";
+
+      try {
+        const response = await fetch(`/check?domain=${encodeURIComponent(domain)}`);
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          const detail = payload && typeof payload.detail === "string" ? payload.detail : null;
+          throw new Error(detail || (response.status === 422 ? "Domaine invalide. Exemple : example.com" : "Erreur du serveur."));
+        }
+
+        const data = await response.json();
+        statusEl.textContent = `Analyse terminée en ${formatMs(data.timings?.total_ms)}.`;
+        renderReport(data);
+      } catch (error) {
+        statusEl.textContent = error.message;
+        statusEl.classList.add("bad");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    function renderScan(data) {
+      scanResults.replaceChildren();
+
+      const stats = el("div", "stats");
+      stats.append(
+        stat("Cible", data.target),
+        stat("Hôtes", (data.ips || []).length),
+        stat("Ports scannés", data.ports_scanned || 0),
+        stat("Durée", formatMs(data.duration_ms))
+      );
+      scanResults.append(stats);
+
+      if (data.hosts_truncated) {
+        scanResults.append(
+          el("p", "muted", `Seuls les ${data.ips.length} premiers hôtes ont été scannés.`)
+        );
+      }
+
+      if ((data.skipped_ips || []).length) {
+        const ignored = card(
+          "Adresses ignorées",
+          "Non publiques (ALLOW_PRIVATE_SCAN désactivé)"
+        );
+        ignored.append(el("p", "muted", data.skipped_ips.join(", ")));
+        scanResults.append(ignored);
+      }
+
+      for (const host of data.hosts || []) {
+        const hostCard = card(
+          `Hôte ${host.ip}`,
+          `${host.open_count} port(s) ouvert(s) - ${formatMs(host.duration_ms)}`
+        );
+
+        if (!host.open_ports.length) {
+          hostCard.append(
+            el("p", "muted", "Aucun port ouvert détecté (ou filtré par un pare-feu).")
+          );
+        } else {
+          const wrap = el("div", "table-wrap");
+          const table = el("table");
+          const thead = el("thead");
+          const headRow = el("tr");
+          headRow.append(
+            el("th", null, "Port"),
+            el("th", null, "Service"),
+            el("th", null, "Latence")
+          );
+          thead.append(headRow);
+          table.append(thead);
+
+          const tbody = el("tbody");
+          for (const item of host.open_ports) {
+            const row = el("tr");
+            row.append(el("td", "dns-type", item.port));
+            row.append(el("td", null, item.service || "inconnu"));
+            row.append(el("td", null, formatMs(item.latency_ms)));
+            tbody.append(row);
+          }
+          table.append(tbody);
+          wrap.append(table);
+          hostCard.append(wrap);
+        }
+
+        scanResults.append(hostCard);
+      }
+    }
+
+    scanForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const target = scanTarget.value.trim();
+      if (!target) return;
+
+      scanButton.disabled = true;
+      scanResults.replaceChildren();
+      scanPdfLink.hidden = true;
+      scanStatus.className = "status scan-status";
+      scanStatus.textContent = "Scan en cours...";
+
+      try {
+        const params = new URLSearchParams({ target });
+        const ports = scanPorts.value.trim();
+        if (ports) params.set("ports", ports);
+
+        const response = await fetch(`/scan?${params.toString()}`);
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          const detail = payload && typeof payload.detail === "string" ? payload.detail : null;
+          throw new Error(detail || "Scan impossible.");
+        }
+
+        const data = await response.json();
+        scanStatus.textContent = `Scan terminé en ${formatMs(data.duration_ms)}.`;
+        renderScan(data);
+        scanPdfLink.href = `/scan/report.pdf?${params.toString()}`;
+        scanPdfLink.hidden = false;
+      } catch (error) {
+        scanStatus.textContent = error.message;
+        scanStatus.classList.add("bad");
+      } finally {
+        scanButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
