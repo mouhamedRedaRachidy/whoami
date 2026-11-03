@@ -3,6 +3,32 @@
 Audit rapide d'un nom de domaine : DNS, adresses IP, identité du serveur,
 certificat TLS, temps de réponse, sous-domaines, scan de ports et export PDF.
 
+## Captures d'écran
+
+> Captures réalisées avec des données de démonstration (analyse simulée de
+> `example.com`, aucun scan réel).
+
+### Accueil
+
+Un seul champ : le domaine. Pas d'IP ni de ports à saisir.
+
+![Page d'accueil de Domain Pulse](docs/screenshots/accueil.png)
+
+### Résultats d'une analyse
+
+Disponibilité, réseau, **ports TCP par IP** (ouvert / connexion refusée / délai
+dépassé), temps de réponse, certificat TLS, DNS et sous-domaines.
+
+![Résultats d'une analyse](docs/screenshots/resultats.png)
+
+### Rapport PDF et version mobile
+
+<p>
+  <img src="docs/screenshots/rapport-pdf.png" alt="Rapport PDF avec la section Ports TCP" width="58%">
+  &nbsp;
+  <img src="docs/screenshots/mobile.png" alt="Version mobile" width="36%">
+</p>
+
 ## Fonctionnalités
 
 - **Tous les enregistrements DNS publics** : `A`, `AAAA`, `CNAME`, `MX`, `NS`,
@@ -17,9 +43,12 @@ certificat TLS, temps de réponse, sous-domaines, scan de ports et export PDF.
 - **Disponibilité fiable** : essai HTTPS, puis HTTPS sans vérification du
   certificat (si le certificat est invalide), puis HTTP. Toute réponse HTTP
   (même `403` ou `404`) est considérée comme « joignable ».
-- **Scan de ports TCP** : ports courants ou plage personnalisée, détection des
-  ports ouverts, nom du service et latence.
-- **Export PDF** pour l'audit de domaine et pour le scan de ports.
+- **Ports TCP courants, automatiquement** : l'utilisateur saisit seulement le
+  domaine. Ses IP publiques (IPv4 et IPv6, 4 maximum) sont testées sur 18 ports
+  fixes : 21, 22, 25, 53, 80, 110, 143, 443, 465, 587, 993, 995, 3306, 5432,
+  6379, 8000, 8080, 8443. Résultat par IP : ouvert (avec temps de connexion),
+  connexion refusée ou délai dépassé. Délai 2 s, 10 connexions simultanées max.
+- **Export PDF** de l'analyse affichée (ports compris), sans relancer le scan.
 - Cache mémoire de 5 minutes et protection contre les cibles non publiques.
 
 ## Endpoints
@@ -29,9 +58,8 @@ certificat TLS, temps de réponse, sous-domaines, scan de ports et export PDF.
 | `GET` | `/` | Interface web |
 | `GET` | `/health` | Sonde de disponibilité |
 | `GET` | `/check?domain=example.com` | Audit complet en JSON |
-| `GET` | `/report.pdf?domain=example.com` | Rapport PDF de l'audit |
-| `GET` | `/scan?target=1.2.3.4` | Scan TCP des ports |
-| `GET` | `/scan/report.pdf?target=1.2.3.4` | Rapport PDF du scan |
+| `GET` | `/check?domain=example.com` → champ `ports` | Résultat du scan TCP |
+| `GET` | `/report.pdf?domain=example.com` | PDF de la dernière analyse (404 si aucune analyse récente) |
 
 Options communes :
 
@@ -39,33 +67,16 @@ Options communes :
 - `DNS_RESOLVERS` (variable d'environnement) : liste de résolveurs DNS séparés
   par des virgules. Par défaut : `1.1.1.1,8.8.8.8,9.9.9.9`. Le résolveur
   système est utilisé en secours.
-- `ALLOW_PRIVATE_SCAN=1` (variable d'environnement) : autorise le scan
-  d'adresses privées (`192.168.x.x`, `10.x.x.x`, `127.0.0.1`, ...).
-  Désactivé par défaut.
 
-Options du scan :
-
-- `target` : adresse IP ou nom de domaine (le domaine est résolu en IPv4/IPv6).
-- `ports` : `22,80,443`, `8000-8100`, ou vide pour les ports courants.
-  Maximum **1024 ports** par scan.
-- `timeout` : délai de connexion par port, entre `0.2` et `2.0` secondes
-  (défaut `1.0`).
+Le PDF reprend l'analyse gardée en mémoire (1 heure) : il ne relance ni l'audit
+ni le scan des ports.
 
 ```bash
 # Audit JSON
 curl "http://localhost:8000/check?domain=example.com"
 
-# Rapport PDF d'audit
+# Rapport PDF de cette analyse (à appeler après /check)
 curl -OJ "http://localhost:8000/report.pdf?domain=example.com"
-
-# Scan des ports 22, 80 et 443
-curl "http://localhost:8000/scan?target=example.com&ports=22,80,443"
-
-# Scan des ports 1 à 1024
-curl "http://localhost:8000/scan?target=1.2.3.4&ports=1-1024"
-
-# Rapport PDF du scan
-curl -OJ "http://localhost:8000/scan/report.pdf?target=1.2.3.4&ports=22,80,443"
 ```
 
 ## Lancer le projet
@@ -102,14 +113,16 @@ sur `/health`.
   d'indisponibilité, l'outil se rabat sur le certificat TLS et des préfixes
   courants.
 - Les domaines privés (`localhost`, `.local`, `.internal`) et les adresses IP
-  littérales sont refusés par l'audit de domaine ; une requête HTTP est bloquée
-  si le domaine ne résout que vers des adresses non publiques. Le scan accepte
-  une IP littérale, mais bloque les adresses privées sauf avec
-  `ALLOW_PRIVATE_SCAN=1`.
-- Le scan de ports est **TCP uniquement**. Un port filtré par un pare-feu peut
-  apparaître comme fermé, et certains services ne répondent pas au simple
-  établissement de connexion.
-- N'utilisez le scan que sur des cibles que vous êtes autorisé à tester.
+  littérales sont refusés. Les IP non publiques (privées, locales, réservées,
+  CGNAT, multicast) ne sont jamais contactées : ni HTTP, ni TLS, ni ports.
+- Le scan de ports est **TCP uniquement** : tester le port 53 en TCP ne vérifie
+  pas le DNS en UDP. Le nom du service est indicatif.
+- Les IP d'un domaine peuvent appartenir à un CDN ou à un proxy : elles ne
+  représentent pas forcément le serveur d'origine.
+- Aucune plage réseau n'est scannée, seulement les IP du domaine saisi.
+  N'analysez que des domaines que vous possédez ou que vous êtes autorisé à
+  tester.
+- Les tests simulent toutes les connexions TCP : la CI ne fait aucun scan réel.
 - La vérification de disponibilité accepte toute réponse HTTP, même `403` ou
   `404` : `reachable` indique que le serveur répond, `status_ok` indique un code
   `200-399`.

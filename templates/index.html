@@ -3,296 +3,543 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Domain Pulse — audit DNS, TLS et scan de ports TCP pour développeurs.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230c0a13'/%3E%3Cpath d='M16 6l7 10-7 10-7-10z' fill='%23a78bfa'/%3E%3C/svg%3E">
   <title>Domain Pulse</title>
 
   <style>
     :root {
-      --ink: #0f172a;
-      --muted: #64748b;
-      --brand: #2563eb;
-      --ok: #15803d;
-      --warn: #b45309;
-      --bad: #b91c1c;
-      --line: #e2e8f0;
-      --card: #ffffff;
+      --bg: #0c0a13;
+      --panel: #15111f;
+      --panel-2: #1c1729;
+      --field: #0a0811;
+      --ink: #f3effc;
+      --ink-soft: #d9d2ea;
+      --muted: #b0a7c6;
+      --muted-2: #8d84a5;
+      --line: #2a2339;
+      --line-strong: #3c3252;
+      --accent-rgb: 167, 139, 250;
+      --accent: #a78bfa;
+      --accent-strong: #c4b5fd;
+      --accent-deep: #7c3aed;
+      --accent-soft: rgba(var(--accent-rgb), 0.13);
+      --on-accent: #16092e;
+      --chip-ink: #d9ccff;
+      --ok: #86efac;
+      --warn: #fcd34d;
+      --bad: #fca5a5;
+      --sans: "Inter", "SF Pro Text", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --display: "Inter Tight", "SF Pro Display", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     }
 
     * { box-sizing: border-box; }
 
     [hidden] { display: none !important; }
 
+    html { color-scheme: dark; }
+
     body {
       margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-      background: #eef2f7;
+      min-height: 100vh;
       color: var(--ink);
-      line-height: 1.5;
+      background:
+        radial-gradient(1100px 560px at 50% -220px, rgba(var(--accent-rgb), 0.14), transparent 62%),
+        var(--bg);
+      font-family: var(--sans);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
     }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 56px 56px;
+      -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 72%);
+      mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 72%);
+    }
+
+    ::selection { background: var(--accent); color: var(--on-accent); }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-strong); }
+
+    code { font-family: var(--mono); }
 
     .page {
-      max-width: 1000px;
+      position: relative;
+      z-index: 1;
+      max-width: 1080px;
       margin: 0 auto;
-      padding: 32px 20px 64px;
+      padding: 24px 22px 72px;
     }
 
+    /* — top bar — */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 8px 2px 26px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .brand:hover { color: var(--ink); }
+    .brand-mark { color: var(--accent); font-size: 18px; line-height: 1; }
+    .brand small { color: var(--muted-2); font-weight: 400; }
+
+    .topbar-links {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .topbar-links a { color: var(--muted); }
+    .topbar-links a:hover { color: var(--accent); }
+
+    .version {
+      padding: 3px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted-2);
+    }
+
+    /* — hero terminal — */
     .hero {
-      background: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
-      color: #ffffff;
-      border-radius: 24px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #19132a 0%, #110d1b 100%);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45), inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(600px 240px at 20% 0%, rgba(var(--accent-rgb), 0.16), transparent 70%);
+    }
+
+    .terminal-bar {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .dot.red { background: #ff5f57; }
+    .dot.yellow { background: #febc2e; }
+    .dot.green { background: #28c840; }
+
+    .terminal-title {
+      margin-left: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .terminal-badge {
+      margin-left: auto;
+      color: var(--muted-2);
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .terminal-body {
+      position: relative;
+      z-index: 1;
       padding: 34px;
-      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
     }
 
     .eyebrow {
-      margin: 0 0 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
+      margin: 0 0 12px;
+      color: var(--accent);
       font-size: 12px;
-      font-weight: 700;
-      color: #bfdbfe;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
     }
 
     h1 {
       margin: 0;
-      font-size: clamp(32px, 6vw, 46px);
-      letter-spacing: -0.03em;
+      color: var(--ink);
+      font-family: var(--display);
+      font-size: clamp(40px, 7vw, 64px);
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.045em;
     }
+
+    h1 span { color: var(--accent); }
+
+    h1::after {
+      content: "_";
+      display: inline-block;
+      margin-left: 6px;
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 0.55em;
+      vertical-align: 0.18em;
+      animation: blink 1.1s step-end infinite;
+    }
+
+    @keyframes blink { 50% { opacity: 0; } }
 
     .lead {
-      margin: 10px 0 22px;
-      max-width: 640px;
-      color: #dbeafe;
+      max-width: 660px;
+      margin: 18px 0 26px;
+      color: var(--ink-soft);
+      font-family: var(--sans);
       font-size: 16px;
+      line-height: 1.7;
     }
 
+    .lead strong { color: var(--ink); font-weight: 600; }
+
+    /* — forms — */
     .search {
       display: flex;
-      gap: 10px;
       flex-wrap: wrap;
+      gap: 10px;
+      align-items: stretch;
     }
 
-    [hidden] { display: none !important; }
+    .search button { min-height: 48px; }
 
-    input, button, .button {
-      font: inherit;
-      border-radius: 12px;
+    .prompt-field {
+      display: flex;
+      flex: 1 1 320px;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: var(--field);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
     }
 
-    input {
-      flex: 1 1 260px;
-      padding: 14px 16px;
-      border: 1px solid transparent;
-      background: #ffffff;
+    .prompt-field:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.22);
+    }
+
+    .prompt {
+      color: var(--accent);
+      font-weight: 700;
+      user-select: none;
+    }
+
+    .prompt-field input {
+      flex: 1;
+      min-width: 0;
+      padding: 14px 0;
+      border: 0;
+      background: transparent;
       color: var(--ink);
-      font-size: 16px;
+      font-family: var(--mono);
+      font-size: 15px;
       outline: none;
     }
 
-    input:focus {
-      box-shadow: 0 0 0 4px rgba(191, 219, 254, 0.55);
-    }
+    input::placeholder { color: var(--muted-2); }
 
     button, .button {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 14px 22px;
-      border: 0;
-      background: #ffffff;
-      color: #1e3a8a;
+      padding: 13px 20px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent-strong) 0%, var(--accent) 55%, #8b5cf6 100%);
+      color: var(--on-accent);
+      font-family: var(--sans);
+      font-size: 13px;
       font-weight: 700;
-      cursor: pointer;
+      letter-spacing: 0.02em;
       text-decoration: none;
-      transition: transform 0.15s ease, opacity 0.15s ease;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
     }
 
-    button:hover, .button:hover { transform: translateY(-1px); }
+    button:hover, .button:hover {
+      background: linear-gradient(135deg, #ddd6fe 0%, var(--accent-strong) 60%, var(--accent) 100%);
+      transform: translateY(-1px);
+    }
 
     button:disabled {
-      opacity: 0.6;
+      opacity: 0.55;
       cursor: progress;
       transform: none;
     }
 
-    .button.secondary {
-      margin-top: 16px;
-      background: rgba(255, 255, 255, 0.14);
-      color: #ffffff;
-      border: 1px solid rgba(255, 255, 255, 0.32);
+    button:focus-visible, .button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
     }
+
+    .prompt-field input:focus-visible { outline: none; }
+
+    .button.secondary {
+      border-color: var(--line-strong);
+      background: transparent;
+      color: var(--ink);
+    }
+
+    .button.secondary:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .button.secondary { margin-top: 16px; }
 
     .hint {
       margin: 12px 0 0;
-      font-size: 13px;
-      color: #bfdbfe;
+      color: var(--muted-2);
+      font-size: 12px;
     }
 
-    .scanner { margin-top: 20px; }
-
-    .scan-form {
-      display: grid;
-      grid-template-columns: 1fr 1fr auto;
-      gap: 10px;
-    }
-
-    .scan-form input, .scan-form button {
+    .hint code, .card-head code {
+      padding: 1px 5px;
       border: 1px solid var(--line);
-    }
-
-    .scan-form button {
-      background: var(--brand);
-      color: #ffffff;
-    }
-
-    .scan-status {
-      margin: 12px 0 0;
-      min-height: 20px;
-      color: var(--muted);
-      font-size: 14px;
-      font-weight: 600;
-    }
-
-    .scan-status.bad { color: var(--bad); }
-
-    .scan-pdf {
-      margin-top: 14px;
-      background: var(--brand);
-      color: #ffffff;
-    }
-
-    .error-text {
-      margin: 8px 0 0;
-      color: var(--bad);
-      font-size: 13px;
+      border-radius: 4px;
+      background: var(--panel-2);
+      color: var(--accent);
+      font-size: 0.95em;
     }
 
     .status {
-      margin: 14px 0 0;
       min-height: 22px;
-      font-size: 14px;
-      color: #dbeafe;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status.bad { color: var(--bad); }
+
+    /* — chargement — */
+    .status { display: flex; align-items: center; gap: 10px; }
+
+    .spinner {
+      flex: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--line-strong);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .notice {
+      margin: 8px 0 0;
+      color: var(--muted-2);
+      font-family: var(--sans);
+      font-size: 12px;
+    }
+
+    /* — ports — */
+    .host + .host { margin-top: 18px; }
+
+    .host h3 {
+      margin: 0 0 10px;
+      color: var(--ink);
+      font-size: 13px;
       font-weight: 600;
     }
 
-    .status.bad { color: #fecaca; }
+    .host h3 small { color: var(--muted-2); font-weight: 400; }
 
-    #report { margin-top: 26px; }
+    .state-open { color: var(--ok); }
+
+    .notes {
+      margin: 16px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 12px;
+    }
+
+    .notes li + li { margin-top: 4px; }
+
+    /* — report — */
+    #report { margin-top: 28px; }
 
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
-      gap: 14px;
-      margin-bottom: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
     }
 
     .stat {
-      background: var(--card);
+      padding: 16px 16px 15px;
       border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+      border-left: 2px solid var(--accent);
+      border-radius: 10px;
+      background: var(--panel);
     }
 
     .stat-label {
       display: block;
-      font-size: 12px;
+      color: var(--muted-2);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-      font-weight: 700;
     }
 
     .stat-value {
       display: block;
       margin-top: 6px;
-      font-size: 22px;
       overflow-wrap: anywhere;
+      color: var(--ink);
+      font-size: 20px;
+      font-weight: 600;
     }
 
     .stat-value.ok { color: var(--ok); }
-    .stat-value.bad { color: var(--bad); }
     .stat-value.warn { color: var(--warn); }
+    .stat-value.bad { color: var(--bad); }
 
     .card {
-      background: var(--card);
+      margin-bottom: 14px;
+      padding: 20px 22px;
       border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 22px;
-      margin-bottom: 16px;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+      border-radius: 12px;
+      background: var(--panel);
     }
 
-    .card-head { margin-bottom: 12px; }
+    .card-head { margin-bottom: 14px; }
 
     .card h2 {
       margin: 0;
-      font-size: 18px;
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 15px;
+      font-weight: 600;
       letter-spacing: -0.01em;
     }
 
-    .muted, .card-head p {
-      margin: 4px 0 0;
-      color: var(--muted);
-      font-size: 13px;
+    .card h2::before {
+      content: "# ";
+      color: var(--accent);
+      font-family: var(--mono);
+      font-weight: 500;
     }
+
+    .card-head p, .muted {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 12.5px;
+    }
+
+    .muted { font-family: var(--mono); }
 
     .row {
       display: grid;
       grid-template-columns: minmax(130px, 190px) 1fr;
-      gap: 12px;
+      gap: 14px;
       padding: 9px 0;
-      border-bottom: 1px solid #f1f5f9;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.055);
     }
 
     .row:last-child { border-bottom: 0; }
 
     .row-label {
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 700;
+      color: var(--muted-2);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
 
     .row-value {
-      font-size: 14px;
       overflow-wrap: anywhere;
       white-space: pre-line;
+      color: var(--ink-soft);
+      font-size: 13px;
     }
 
-    .table-wrap { overflow-x: auto; }
+    .row-value, .dns-value, td { font-family: var(--mono); }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+    }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 13px;
+      font-size: 12.5px;
     }
 
     th, td {
       padding: 10px 12px;
       text-align: left;
       vertical-align: top;
-      border-bottom: 1px solid var(--line);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.055);
     }
 
+    tr:last-child td { border-bottom: 0; }
+
     th {
-      font-size: 11px;
+      background: rgba(255, 255, 255, 0.025);
+      color: var(--muted-2);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-      background: #f8fafc;
     }
+
+    tbody tr:hover { background: rgba(var(--accent-rgb), 0.07); }
 
     .dns-type {
       width: 110px;
-      font-weight: 700;
-      color: #1d4ed8;
+      color: var(--accent);
+      font-weight: 600;
     }
 
     .dns-value {
-      white-space: pre-line;
       overflow-wrap: anywhere;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12.5px;
+      white-space: pre-line;
+      color: var(--ink-soft);
     }
 
     .chips {
@@ -302,114 +549,148 @@
     }
 
     .chip {
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      color: #1e40af;
-      font-size: 12.5px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       overflow-wrap: anywhere;
+      padding: 5px 9px;
+      border: 1px solid rgba(var(--accent-rgb), 0.38);
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--chip-ink);
+      font-family: var(--mono);
+      font-size: 11.5px;
     }
 
     .alert {
-      border-color: #fecaca;
-      background: #fff1f2;
-      color: #7f1d1d;
+      border-color: rgba(242, 139, 130, 0.35);
+      background: rgba(242, 139, 130, 0.06);
     }
 
-    .alert h2 { color: #991b1b; }
+    .alert h2 { color: var(--bad); }
+    .alert h2::before { color: var(--bad); }
 
-    @media (max-width: 720px) {
-      .scan-form { grid-template-columns: 1fr; }
+    .error-text {
+      margin: 8px 0 0;
+      color: var(--bad);
+      font-size: 12px;
+    }
+
+    .footer {
+      margin-top: 28px;
+      color: var(--muted-2);
+      font-size: 11px;
+      text-align: center;
+    }
+
+    /* — autofill — */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus {
+      transition: background-color 9999s ease-out;
+      -webkit-text-fill-color: var(--ink);
+      -webkit-box-shadow: 0 0 0 1000px var(--field) inset;
+    }
+
+    @media (max-width: 760px) {
+      .page { padding: 18px 14px 56px; }
+      .terminal-body { padding: 26px 20px; }
+      .topbar { padding-bottom: 18px; }
+      .topbar-links .version { display: none; }
     }
 
     @media (max-width: 560px) {
-      .hero { padding: 24px; }
-      .row { grid-template-columns: 1fr; gap: 2px; }
+      .terminal-body { padding: 24px 18px; }
+      .terminal-badge { display: none; }
+      h1 { font-size: 42px; }
+      .lead { font-size: 15px; }
+      .search button { width: 100%; }
+      .row { grid-template-columns: 1fr; gap: 3px; }
       .dns-type { width: 70px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+      }
     }
   </style>
 </head>
 
 <body>
   <main class="page">
+    <nav class="topbar" aria-label="Navigation principale">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">◆</span>
+        <span>Domain Pulse <small>/ devtools</small></span>
+      </a>
+      <div class="topbar-links">
+        <span class="version">v1.0</span>
+        <a href="/docs" target="_blank" rel="noreferrer">API docs <span aria-hidden="true">↗</span></a>
+      </div>
+    </nav>
+
     <header class="hero">
-      <p class="eyebrow">Audit réseau &amp; DNS</p>
-      <h1>Domain Pulse</h1>
-      <p class="lead">
-        Enregistrements DNS, adresses IP, serveur, certificat TLS, temps de réponse
-        et sous-domaines en un seul scan.
-      </p>
-
-      <form id="check-form" class="search">
-        <input
-          type="text"
-          id="domain"
-          placeholder="example.com"
-          aria-label="Domaine"
-          autocomplete="off"
-          spellcheck="false"
-          required
-        >
-        <button type="submit">Analyser</button>
-      </form>
-
-      <p class="hint">Sans https://. Exemple : example.com</p>
-      <p id="status" class="status" role="status" aria-live="polite"></p>
-      <a id="pdf-link" class="button secondary" hidden>Télécharger le rapport PDF</a>
-    </header>
-
-    <section class="card scanner">
-      <div class="card-head">
-        <h2>Scanner de ports</h2>
-        <p>Scan TCP d'une adresse IP ou d'un domaine (maximum 1024 ports). Les adresses privées nécessitent <code>ALLOW_PRIVATE_SCAN=1</code>.</p>
+      <div class="terminal-bar">
+        <span class="dot red" aria-hidden="true"></span>
+        <span class="dot yellow" aria-hidden="true"></span>
+        <span class="dot green" aria-hidden="true"></span>
+        <span class="terminal-title">domain-pulse — audit</span>
+        <span class="terminal-badge">DNS · TLS · TCP</span>
       </div>
 
-      <form id="scan-form" class="scan-form">
-        <input
-          type="text"
-          id="scan-target"
-          placeholder="1.2.3.4 ou example.com"
-          aria-label="Cible du scan"
-          autocomplete="off"
-          spellcheck="false"
-          required
-        >
-        <input
-          type="text"
-          id="scan-ports"
-          placeholder="Ports : vide = courants, ex. 22,80,443 ou 1-1024"
-          aria-label="Ports à scanner"
-          autocomplete="off"
-          spellcheck="false"
-        >
-        <button type="submit">Scanner</button>
-      </form>
+      <div class="terminal-body">
+        <p class="eyebrow">// audit réseau &amp; dns</p>
+        <h1>Domain <span>Pulse</span></h1>
+        <p class="lead">
+          Saisissez un domaine : DNS, adresses IP, serveur, certificat TLS, temps de
+          réponse, sous-domaines et <strong>ports TCP courants</strong> en une seule analyse.
+        </p>
 
-      <p id="scan-status" class="status scan-status" role="status" aria-live="polite"></p>
-      <div id="scan-results"></div>
-      <a id="scan-pdf-link" class="button scan-pdf" hidden>Télécharger le rapport PDF</a>
-    </section>
+        <form id="check-form" class="search">
+          <div class="prompt-field">
+            <span class="prompt" aria-hidden="true">❯</span>
+            <input
+              type="text"
+              id="domain"
+              placeholder="example.com"
+              aria-label="Domaine"
+              autocomplete="off"
+              spellcheck="false"
+              required
+            >
+          </div>
+          <button type="submit">Analyser <span aria-hidden="true">→</span></button>
+        </form>
+
+        <p class="hint">Sans https:// · exemple : <code>example.com</code></p>
+        <p class="notice">
+          N'analysez que des domaines que vous possédez ou que vous êtes autorisé à tester.
+          Seules les IP publiques du domaine sont testées (18 ports TCP fixes, 4 IP maximum).
+        </p>
+        <p id="status" class="status" role="status" aria-live="polite">
+          <span id="spinner" class="spinner" aria-hidden="true" hidden></span>
+          <span id="status-text"></span>
+        </p>
+        <a id="pdf-link" class="button secondary" hidden>Télécharger le rapport PDF</a>
+      </div>
+    </header>
 
     <section id="report" hidden></section>
+
+    <footer class="footer">
+      Domain Pulse · audit DNS, TLS et ports TCP — n'analysez que les domaines que vous êtes autorisé à tester.
+    </footer>
   </main>
 
   <script>
     const form = document.querySelector("#check-form");
     const input = document.querySelector("#domain");
     const statusEl = document.querySelector("#status");
+    const statusText = document.querySelector("#status-text");
+    const spinner = document.querySelector("#spinner");
     const reportEl = document.querySelector("#report");
     const pdfLink = document.querySelector("#pdf-link");
     const button = form.querySelector("button");
-
-    const scanForm = document.querySelector("#scan-form");
-    const scanTarget = document.querySelector("#scan-target");
-    const scanPorts = document.querySelector("#scan-ports");
-    const scanStatus = document.querySelector("#scan-status");
-    const scanResults = document.querySelector("#scan-results");
-    const scanPdfLink = document.querySelector("#scan-pdf-link");
-    const scanButton = scanForm.querySelector("button");
 
     function el(tag, className, text) {
       const node = document.createElement(tag);
@@ -476,7 +757,8 @@
         ),
         stat("Code HTTP", data.status_code ?? "n/d"),
         stat("Temps de réponse", formatMs(data.response_time_ms)),
-        stat("Sous-domaines", data.subdomains_total ?? 0)
+        stat("Sous-domaines", data.subdomains_total ?? 0),
+        stat("Ports TCP ouverts", countOpenPorts(data.ports))
       );
       reportEl.append(stats);
 
@@ -498,6 +780,8 @@
         network.append(el("p", "muted", data.http.note));
       }
       reportEl.append(network);
+
+      reportEl.append(renderPorts(data.ports));
 
       const timings = card("Temps de réponse", "Mesures effectuées pendant l'analyse");
       timings.append(
@@ -583,17 +867,115 @@
       pdfLink.hidden = false;
     }
 
+    function countOpenPorts(ports) {
+      if (!ports || ports.skipped) return "n/d";
+      return (ports.hosts || []).reduce((total, host) => total + (host.open_count || 0), 0);
+    }
+
+    function portTable(openPorts) {
+      const wrap = el("div", "table-wrap");
+      const table = el("table");
+      const thead = el("thead");
+      const headRow = el("tr");
+      headRow.append(
+        el("th", null, "Port"),
+        el("th", null, "Service (indicatif)"),
+        el("th", null, "État"),
+        el("th", null, "Temps de connexion")
+      );
+      thead.append(headRow);
+      table.append(thead);
+
+      const tbody = el("tbody");
+      for (const item of openPorts) {
+        const row = el("tr");
+        row.append(
+          el("td", "dns-type", item.port),
+          el("td", null, item.service || "inconnu"),
+          el("td", "state-open", "ouvert"),
+          el("td", null, formatMs(item.latency_ms))
+        );
+        tbody.append(row);
+      }
+      table.append(tbody);
+      wrap.append(table);
+      return wrap;
+    }
+
+    function renderPorts(ports) {
+      const section = card(
+        "Ports TCP",
+        ports
+          ? `Connexion TCP sur ${(ports.ports || []).length} ports courants · délai ${ports.timeout_seconds} s · ${ports.max_connections} connexions simultanées max`
+          : "Scan des ports indisponible"
+      );
+      if (!ports) return section;
+
+      if (ports.error) section.append(el("p", "error-text", ports.error));
+      if ((ports.not_scanned_ips || []).length) {
+        section.append(valueRow(
+          "IP non testées",
+          `${ports.not_scanned_ips.join(", ")} (limite de ${ports.max_ips} IP par analyse)`
+        ));
+      }
+      if ((ports.rejected_ips || []).length) {
+        section.append(valueRow(
+          "IP refusées",
+          `${ports.rejected_ips.join(", ")} (adresses non publiques)`
+        ));
+      }
+
+      for (const host of ports.hosts || []) {
+        const block = el("div", "host");
+        const title = el("h3", null, `IPv${host.version} ${host.ip} `);
+        title.append(el("small", null, `· ${host.open_count} ouvert(s) · ${formatMs(host.duration_ms)}`));
+        block.append(title);
+
+        if (host.open_ports.length) {
+          block.append(portTable(host.open_ports));
+        } else {
+          block.append(el("p", "muted", "Aucun port ouvert détecté."));
+        }
+
+        const list = (items) => items.length ? items.join(", ") : "aucun";
+        block.append(
+          valueRow("Connexion refusée", list(host.refused_ports || [])),
+          valueRow("Délai dépassé", list(host.timeout_ports || []))
+        );
+        for (const item of host.error_ports || []) {
+          block.append(valueRow(`Port ${item.port}`, `erreur réseau : ${item.error || "-"}`));
+        }
+        section.append(block);
+      }
+
+      const notes = el("ul", "notes");
+      for (const note of ports.notes || []) notes.append(el("li", null, note));
+      if (notes.children.length) section.append(notes);
+      return section;
+    }
+
+    function cleanDomain(value) {
+      // Tolère un copier-coller d'URL : https://example.com/page -> example.com
+      return value.trim().replace(/^[a-z]+:\/\//i, "").split(/[\/?#]/)[0].replace(/\.$/, "");
+    }
+
+    function setStatus(text, { loading = false, bad = false } = {}) {
+      statusText.textContent = text;
+      spinner.hidden = !loading;
+      statusEl.classList.toggle("bad", bad);
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
 
-      const domain = input.value.trim();
+      const domain = cleanDomain(input.value);
       if (!domain) return;
+      input.value = domain;
 
       button.disabled = true;
       reportEl.hidden = true;
       pdfLink.hidden = true;
-      statusEl.className = "status";
-      statusEl.textContent = "Analyse en cours... la découverte des sous-domaines peut prendre quelques secondes.";
+      setStatus("Analyse en cours… DNS, HTTPS, sous-domaines et ports TCP (jusqu'à ~20 s).", { loading: true });
 
       try {
         const response = await fetch(`/check?domain=${encodeURIComponent(domain)}`);
@@ -604,117 +986,12 @@
         }
 
         const data = await response.json();
-        statusEl.textContent = `Analyse terminée en ${formatMs(data.timings?.total_ms)}.`;
+        setStatus(`Analyse terminée en ${formatMs(data.timings?.total_ms)}.`);
         renderReport(data);
       } catch (error) {
-        statusEl.textContent = error.message;
-        statusEl.classList.add("bad");
+        setStatus(error.message, { bad: true });
       } finally {
         button.disabled = false;
-      }
-    });
-
-    function renderScan(data) {
-      scanResults.replaceChildren();
-
-      const stats = el("div", "stats");
-      stats.append(
-        stat("Cible", data.target),
-        stat("Hôtes", (data.ips || []).length),
-        stat("Ports scannés", data.ports_scanned || 0),
-        stat("Durée", formatMs(data.duration_ms))
-      );
-      scanResults.append(stats);
-
-      if (data.hosts_truncated) {
-        scanResults.append(
-          el("p", "muted", `Seuls les ${data.ips.length} premiers hôtes ont été scannés.`)
-        );
-      }
-
-      if ((data.skipped_ips || []).length) {
-        const ignored = card(
-          "Adresses ignorées",
-          "Non publiques (ALLOW_PRIVATE_SCAN désactivé)"
-        );
-        ignored.append(el("p", "muted", data.skipped_ips.join(", ")));
-        scanResults.append(ignored);
-      }
-
-      for (const host of data.hosts || []) {
-        const hostCard = card(
-          `Hôte ${host.ip}`,
-          `${host.open_count} port(s) ouvert(s) - ${formatMs(host.duration_ms)}`
-        );
-
-        if (!host.open_ports.length) {
-          hostCard.append(
-            el("p", "muted", "Aucun port ouvert détecté (ou filtré par un pare-feu).")
-          );
-        } else {
-          const wrap = el("div", "table-wrap");
-          const table = el("table");
-          const thead = el("thead");
-          const headRow = el("tr");
-          headRow.append(
-            el("th", null, "Port"),
-            el("th", null, "Service"),
-            el("th", null, "Latence")
-          );
-          thead.append(headRow);
-          table.append(thead);
-
-          const tbody = el("tbody");
-          for (const item of host.open_ports) {
-            const row = el("tr");
-            row.append(el("td", "dns-type", item.port));
-            row.append(el("td", null, item.service || "inconnu"));
-            row.append(el("td", null, formatMs(item.latency_ms)));
-            tbody.append(row);
-          }
-          table.append(tbody);
-          wrap.append(table);
-          hostCard.append(wrap);
-        }
-
-        scanResults.append(hostCard);
-      }
-    }
-
-    scanForm.addEventListener("submit", async (event) => {
-      event.preventDefault();
-
-      const target = scanTarget.value.trim();
-      if (!target) return;
-
-      scanButton.disabled = true;
-      scanResults.replaceChildren();
-      scanPdfLink.hidden = true;
-      scanStatus.className = "status scan-status";
-      scanStatus.textContent = "Scan en cours...";
-
-      try {
-        const params = new URLSearchParams({ target });
-        const ports = scanPorts.value.trim();
-        if (ports) params.set("ports", ports);
-
-        const response = await fetch(`/scan?${params.toString()}`);
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null);
-          const detail = errorDetail(payload);
-          throw new Error(detail || "Scan impossible.");
-        }
-
-        const data = await response.json();
-        scanStatus.textContent = `Scan terminé en ${formatMs(data.duration_ms)}.`;
-        renderScan(data);
-        scanPdfLink.href = `/scan/report.pdf?${params.toString()}`;
-        scanPdfLink.hidden = false;
-      } catch (error) {
-        scanStatus.textContent = error.message;
-        scanStatus.classList.add("bad");
-      } finally {
-        scanButton.disabled = false;
       }
     });
   </script>
