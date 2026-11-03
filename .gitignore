@@ -7,3 +7,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Rapports de scans locaux (contiennent des IP) : ne jamais publier
+full-port-scan*.pdf
+full-port-scan*.json
+scan-ports-*.pdf
