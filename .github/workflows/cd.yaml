@@ -36,14 +36,14 @@ jobs:
                     sudo docker pull "$IMAGE"
 
                     echo "[2/4] Retirer l'ancien conteneur s'il existe"
-                    if sudo docker container inspect notes-api >/dev/null 2>&1; then
-                    sudo docker stop notes-api
-                    sudo docker rm notes-api
+                    if sudo docker container inspect whom >/dev/null 2>&1; then
+                    sudo docker stop whom
+                    sudo docker rm whom
                     fi
 
                     echo "[3/4] Démarrer le nouveau conteneur"
                     sudo docker run -d \
-                    --name notes-api \
+                    --name whom \
                     --restart unless-stopped \
                     -p 127.0.0.1:8000:8000 \
                     "$IMAGE"
